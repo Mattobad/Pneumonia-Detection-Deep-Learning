@@ -18,11 +18,17 @@ class Dicomutils:
     """
     Class for data preparation for dicom files
     """
+    __base_path = os.getcwd()
     
     # constructor
     def __init__(self,src_path,des_path=None):
         """
         Constructor accepts source path as the argument
+        
+        Args:
+            src_path: source path for the files
+            des_path: destination path for the files
+                        if None then same as src_path
         """
         self.src_path = src_path
         self.des_path = des_path
@@ -34,16 +40,15 @@ class Dicomutils:
         
         Args:
             patient_id = patient id in the dicom file
-            source_path = source path for dicom file
         
         Returns:
             dicom object 
         """
         # handling exception for file not found
         try:
-            print('patient id:',patient_id)
+            #print('patient id:',patient_id)
             file_path = os.path.join(self.src_path,patient_id+'.dcm')
-            print('file path: ',file_path)
+            #print('file path: ',file_path)
             dc = pydicom.dcmread(file_path)
             return dc
         except:
@@ -88,63 +93,62 @@ class Dicomutils:
     """
     
     # image conversion function:
-    def extract_patient_metadata(self,patient_files,valid=False):
+    def extract_patient_data(self,train,valid):
         """
         Function to extract metadata(Patient_Id, Age, Sex) from the dicom
         file and return the final csv file
 
         Args:
-            source_path = directory containing dicom files
-            destination_path = directory to holder the converted image files
-            patient_files = list containing patient id
+            train = training data
+            valid = validation data
 
         Returns:
             doesn't return anything, only outputs csv file with patient record
         """
         
         # creating dataFrame with patient info column
-        cols =['Patient_Id','Age','Sex']
+        cols =['patientId','Age','Sex']
         # creating empty dataframe with only columns name
         patient_df = pd.DataFrame(columns=cols)
         # enter data with patient id
-        patient_df['Patient_Id'] = patient_files
+        patient_df['patientId'] = train
         
-        print('Process started...')
+        # adding id of validation data as later needed
+        valid_series = pd.Series(valid)
+        patient_df['patientId'].append(valid_series,ignore_index=True)
         
         
+        print('Process started...')       
         if self.des_path == None:
-            if valid == False:
-            # create folder in the source path
-                d_path = os.path.join(self.src_path,'train')
-            else:
-                d_path = os.path.join(self.src_path,'valid')
+            train_path = os.path.join(self.src_path,'train')
+            valid_path = os.path.join(self.src_path,'valid')
         else: 
-            if valid == False:
-            # create folder in the destination path
-                d_path = os.path.join(self.des_path,'train')
-            else:
-                d_path = os.path.join(self.des_path,'valid')
+            train_path = os.path.join(self.des_path,'train')
+            valid_path = os.path.join(self.des_path,'valid')
             
         # create a folder to store the converted images
         try:
             #creating directory if not exists
-            os.makedirs(d_path)
-            folder_name = d_path.split('/')[-1].split('\\')[-1]
-            print(f"{folder_name} directory created!!")
+            os.makedirs(train_path)
+            os.makedirs(valid_path)
+            train_folder = train_path.split('/')[-1].split('\\')[-1]
+            valid_folder = valid_path.split('/')[-1].split('\\')[-1]
+            print(f"{train_folder}, {valid_folder} directories created!!")
         except OSError:
-            print('Directory already exists!!!')
+            print('Directories already exists!!!')
             
         
         # for printing progress bar 
-        progress_bar = tqdm(total=len(patient_files))
+        print('converting training files')
+        progress_bar = tqdm(total=len(train))
         #patient_files is the list containing all the patient ids
-        for patient_id in patient_files:
+        for patient_id in train:
             
             # calling function to get the meta data
             result = self.get_metadata(patient_id)
 
             # calling function to convert the image  
-            self.dicom_to_png(d_path,patient_id)
+            self.dicom_to_png(train_path,patient_id)
 
             # fills the age and sex column related to the patient 
             # as returned by the function 
@@ -153,6 +157,29 @@ class Dicomutils:
             
             progress_bar.update(1)
             
+            
+        progress_bar.close()
+        
+         # for printing progress bar 
+        print('converting validation files')
+        progress_bar = tqdm(total=len(valid))
+        #patient_files is the list containing all the patient ids
+        for patient_id in valid:
+            
+            # calling function to get the meta data
+            result = self.get_metadata(patient_id)
+
+            # calling function to convert the image  
+            self.dicom_to_png(valid_path,patient_id)
+
+            # fills the age and sex column related to the patient 
+            # as returned by the function 
+            patient_df.loc[patient_df['Patient_Id'] == patient_id,'Age'] = result[0]
+            patient_df.loc[patient_df['Patient_Id'] == patient_id,'Sex'] = result[1]
+            
+            progress_bar.update(1)
+            
+            
         progress_bar.close()
         
         # checking if data entered into dataFrame properly
@@ -160,7 +187,7 @@ class Dicomutils:
             print("DataFrame is empty: Smthing went wrong!!!")
         else:
             print('Writing the dataFrame to csv file')
-            patient_df.to_csv(os.path.join(self.src_path,'patient_records.csv'),
+            patient_df.to_csv(os.path.join(self.__base_path,'patient_records.csv'),
                               index=False)
             print('File conversion completed...')
         
@@ -171,7 +198,6 @@ class Dicomutils:
         the destination directory
 
         Args:
-            source_path: files source directory
             des_path: files destination directory
             file_name: patient id
 
@@ -209,83 +235,85 @@ class Dicomutils:
             # use proper exception msg
             return print('Errro while writing the file!!!')   
     
-      # utility code to seperate the training & validation file
-      # as we already have extracted the image from the dicom
-      # file best possible way now is to seperate the files
-      # into respective folders
 
+    # private function to move files
+    def __move_files(self,src_path,dst_folder,files):
+        """
+        Function to move from source to destination
 
-#     # function to move files
-#     def move_files(self,files,dst_folder):
-#         """
-#         Function to move from source to destination
+        Args:
+            src_path:source directory
+            dst_folder: destination folder
+            files: name of files
 
-#         Args:
-#             src_path:source directory
-#             dst_folder: destination folder
+        Returns:
+            None
+        """
+              
+        des_path = os.path.join(src_path,dst_folder)
+        try:
+            # creating directory if not exists
+            os.makedirs(des_path)
+            #os.makedris(dst/valid)
+            print('directory created!!!')
+        except OSError:
+            print('Directory already exists!!!')
 
-#         Returns:
-#             None
-#         """
-
-#         des_path = join_path(src_path,dst_folder)
-#         try:
-#             # creating directory if not exists
-#             os.makedirs(des_path)
-#             #os.makedris(dst/valid)
-#             print('directory created!!!')
-#         except OSError:
-#             print('Directory already exists!!!')
-
-#         # moving files
-#         for f in files:
-#             try:
-#                 #print(des_path)
-#                 shutil.move(join_path(self.src_path,f),des_path)
-#             except:
-#                 print('file not found or already moved')
-#                 pass
-
-#           # function which only returns common files on the patient records and files in
-#           # the directory as we want specific files to be moved
-#           #Note: os.listdire lists both sub-directories as well as files in the folder
-
-#     def common_files(path,df):
-
-#         # listing all the contain of the directory 
-#         dir_files = os.listdir(path)
-#         # listing all the patientId in the dataFrame and concat '.png' extension
-#         # for comparison later
-#         files = [file+'.png' for file in df['patientId']]
-#         # take only the files common on both the above list
-#         com_files = list(set(files).intersection(dir_files))
-
-#         return com_files
-
-#     # creating folder with number of classese and moving the files
-
-#     # function move the files to respective class folder
-#     def class_folder(path,classes,df):
-#         """"
-#         Function to move files to respective class folder
-
-#         Args:
-#             path: files path
-#             classes: array containing the classes
-#             df: dataFrame
-
-#         Returns:
-#             None
-#         """
+        # progress bar for moving files
+        pbar = tqdm(total=len(files))
+        # moving files
+        for f in files:
+            #print(os.path.join(src_path,f))
+            try:
+                print(des_path)
+                shutil.move(os.path.join(src_path,f),des_path)
+                # update progress bar
+                
+            except:
+                print('file not found or already moved')
+                pass
             
-#         for c in classes:
-#             temp_df = df.loc[df['Target'] == c]
+            pbar.update(1)
+            
+
+          # function which only returns common files on the patient records and files in
+          # the directory as we want specific files to be moved
+          #Note: os.listdire lists both sub-directories as well as files in the folder
+
+    def __common_files(self,path,df):
+
+        # listing all the contain of the directory 
+        dir_files = os.listdir(path)
+        # listing all the patientId in the dataFrame and concat '.png' extension
+        # for comparison later
+        files = [file+'.png' for file in df['patientId']]
+        # take only the files common on both the above list
+        com_files = list(set(files).intersection(dir_files))
+
+        return com_files
+
+    # creating folder with number of classese and moving the files
+
+    # function move the files to respective class folder
+    def class_folder(self,df,path,classes):
+        """"
+        Function to move files to respective class folder
+
+        Args:
+            df: dataFrame
+            path: files path
+            classes: array containing the classes
+
+        Returns:
+            None
+        """
+            
+        for c in classes:
+            temp_df = df.loc[df['Target'] == c]
    
-#             # using common_files method to list only the common files
-#             files = common_files(path,temp_df)
-#             # using move files method to move the files to class folder
-#             # wrapping the int c into str, as required
-#             move_files(path,files,str(c))
-#             #print(files[:10])
-           
-    
+            # using common_files method to list only the common files
+            files = self.__common_files(path,temp_df)
+            #print(files)
+            # using move files method to move the files to class folder
+            # wrapping the int c into str, as required
+            self.__move_files(path,str(c),files)
