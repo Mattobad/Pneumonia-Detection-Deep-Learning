@@ -140,6 +140,7 @@ class Dicomutils:
         
         # for printing progress bar 
         print('converting training files')
+        tqdm._instances.clear()
         progress_bar = tqdm(total=len(train))
         #patient_files is the list containing all the patient ids
         for patient_id in train:
@@ -260,6 +261,7 @@ class Dicomutils:
             print('Directory already exists!!!')
 
         # progress bar for moving files
+        tqdm._instances.clear()
         pbar = tqdm(total=len(files))
         # moving files
         for f in files:
